@@ -51,9 +51,7 @@
 
 #include "hciattach.h"
 
-#ifdef NEED_PPOLL
 #include "ppoll.h"
-#endif
 
 struct uart_t {
 	char *type;
@@ -248,6 +246,7 @@ static int ericsson(int fd, struct uart_t *u, struct termios *ti)
 	}
 
 	/* Send initialization command */
+	printf("ericsson ---->write here\n");
 	if (write(fd, cmd, 5) != 5) {
 		perror("Failed to write init command");
 		return -1;
@@ -285,6 +284,7 @@ static int digi(int fd, struct uart_t *u, struct termios *ti)
 	}
 
 	/* Send initialization command */
+	printf("digi ---->write here\n");
 	if (write(fd, cmd, 5) != 5) {
 		perror("Failed to write init command");
 		return -1;
@@ -351,12 +351,16 @@ static int bcsp_max_retries = 10;
 static void bcsp_tshy_sig_alarm(int sig)
 {
 	unsigned char bcsp_sync_pkt[10] = {0xc0,0x00,0x41,0x00,0xbe,0xda,0xdc,0xed,0xed,0xc0};
-	int len;
 	static int retries = 0;
 
 	if (retries < bcsp_max_retries) {
 		retries++;
-		len = write(serial_fd, &bcsp_sync_pkt, 10);
+		printf("bcsp_tshy_sig_alarm ---->write here\n");
+		if (write(serial_fd, &bcsp_sync_pkt, 10) < 0)
+		{
+			printf("bcsp_tshy_sig_alarm ---->write here\n");
+			return;
+		}
 		alarm(1);
 		return;
 	}
@@ -369,12 +373,16 @@ static void bcsp_tshy_sig_alarm(int sig)
 static void bcsp_tconf_sig_alarm(int sig)
 {
 	unsigned char bcsp_conf_pkt[10] = {0xc0,0x00,0x41,0x00,0xbe,0xad,0xef,0xac,0xed,0xc0};
-	int len;
 	static int retries = 0;
 
 	if (retries < bcsp_max_retries){
 		retries++;
-		len = write(serial_fd, &bcsp_conf_pkt, 10);
+		printf("bcsp_tconf_sig_alarm ---->write here\n");
+		if (write(serial_fd, &bcsp_conf_pkt, 10) < 0)
+		{
+			printf("bcsp_tconf_sig_alarm ---->write here\n");
+			return;
+		}
 		alarm(1);
 		return;
 	}
@@ -451,7 +459,13 @@ static int bcsp(int fd, struct uart_t *u, struct termios *ti)
 		}
 
 		if (!memcmp(bcspp, bcspsync, 4)) {
-			len = write(fd, &bcsp_sync_resp_pkt,10);
+			printf("bcsp ---->write here\n");
+			if (write(fd, &bcsp_sync_resp_pkt,10) < 0)
+			{
+				perror("bcsp to read");
+				return -1;
+			}
+			
 		} else if (!memcmp(bcspp, bcspsyncresp, 4))
 			break;
 	}
@@ -495,14 +509,57 @@ static int bcsp(int fd, struct uart_t *u, struct termios *ti)
 		}
 
 		if (!memcmp(bcspp, bcspsync, 4))
-			len = write(fd, &bcsp_sync_resp_pkt, 10);
+			{
+				printf("bcsp1 ---->write here\n");		
+				len = write(fd, &bcsp_sync_resp_pkt, 10);
+			}
 		else if (!memcmp(bcspp, bcspconf, 4))
-			len = write(fd, &bcsp_conf_resp_pkt, 10);
+			{
+				printf("bcsp2 ---->write here\n");
+				len = write(fd, &bcsp_conf_resp_pkt, 10);
+			}
 		else if (!memcmp(bcspp, bcspconfresp,  4))
+			
 			break;
+		else
+			continue;
+
+		if (len < 0)
+			return -errno;
 	}
 
 	/* State = garrulous */
+
+	return 0;
+}
+//Add by RDA android  ,rda initialization.
+//setup uart flow control, if your uart hardware fifo less than 480 bytes.
+static int rda_setup_flow_ctl(int fd, struct uart_t *u, struct termios *ti)
+{
+	unsigned int i, num_send;
+	printf("rda_setup_flow_ctl ---------flow \n");
+	unsigned char rda_flow_ctl_10[][14] =
+	{
+		{0x01,0x02,0xfd,0x0a,0x00,0x01,0x44,0x00,0x20,0x40,0x3c,0x00,0x00,0x00}, 
+		{0x01,0x02,0xfd,0x0a,0x00,0x01,0x10,0x00,0x00,0x50,0x22,0x01,0x00,0x00}		// flow control
+	};
+
+	if (u->flags & FLOW_CTL) {
+		/*Setup flow control */
+		for (i = 0; i < sizeof(rda_flow_ctl_10)/sizeof(rda_flow_ctl_10[0]); i++) {
+			
+			num_send = write(fd, rda_flow_ctl_10[i], sizeof(rda_flow_ctl_10[i]));
+			printf("rda_setup_flow_ctl----> i=%d  num_send=%d\n",i,num_send);
+			if (num_send != sizeof(rda_flow_ctl_10[i])) {
+				perror("");
+				printf("num_send = %d (%d)\n", num_send, sizeof(rda_flow_ctl_10[i]));
+				return -1;
+			}
+			usleep(5000);
+		}
+	}
+
+	usleep(50000);
 
 	return 0;
 }
@@ -560,6 +617,7 @@ static int csr(int fd, struct uart_t *u, struct termios *ti)
 
 	/* Send command */
 	do {
+		printf("csr1 wirte here \n");
 		if (write(fd, cmd, clen) != clen) {
 			perror("Failed to write init command (GET_BUILD_ID)");
 			return -1;
@@ -604,6 +662,7 @@ static int csr(int fd, struct uart_t *u, struct termios *ti)
 #ifdef CSR_DEBUG
 	/* Send command */
 	do {
+		printf("csr2 wirte here \n");
 		if (write(fd, cmd, clen) != clen) {
 			perror("Failed to write init command (GET_BUILD_ID)");
 			return -1;
@@ -670,6 +729,7 @@ static int csr(int fd, struct uart_t *u, struct termios *ti)
 #endif
 
 	/* Send the command to set the CSR UART speed */
+	printf("csr3 wirte here \n");
 	if (write(fd, cmd, clen) != clen) {
 		perror("Failed to write init command (SET_UART_SPEED)");
 		return -1;
@@ -725,6 +785,7 @@ static int swave(int fd, struct uart_t *u, struct termios *ti)
 	}
 
 	/* Send initialization command */
+	printf("swave1 wirte here \n");
 	if (write(fd, cmd, 10) != 10) {
 		perror("Failed to write init command");
 		return -1;
@@ -766,6 +827,7 @@ static int swave(int fd, struct uart_t *u, struct termios *ti)
 	cmd[3] = 0x00;
 
 	/* Send reset command */
+	printf("swave2 wirte here \n");
 	if (write(fd, cmd, 4) != 4) {
 		perror("Can't write Silicon Wave reset cmd.");
 		return -1;
@@ -831,6 +893,7 @@ static int st(int fd, struct uart_t *u, struct termios *ti)
 	}
 
 	/* Send initialization command */
+	printf("st wirte here \n");
 	if (write(fd, cmd, 5) != 5) {
 		perror("Failed to write init command");
 		return -1;
@@ -907,6 +970,7 @@ static int bcm2035(int fd, struct uart_t *u, struct termios *ti)
 	cmd[3] = 0x00;
 
 	/* Send command */
+	printf("bcm20351 wirte here \n");
 	if (write(fd, cmd, 4) != 4) {
 		fprintf(stderr, "Failed to write reset command\n");
 		return -1;
@@ -929,6 +993,7 @@ static int bcm2035(int fd, struct uart_t *u, struct termios *ti)
 		str2ba(u->bdaddr, (bdaddr_t *) (cmd + 4));
 
 		/* Send command */
+		printf("bcm20352 wirte here \n");
 		if (write(fd, cmd, 10) != 10) {
 			fprintf(stderr, "Failed to write BD_ADDR command\n");
 			return -1;
@@ -950,6 +1015,7 @@ static int bcm2035(int fd, struct uart_t *u, struct termios *ti)
 	cmd[3] = 0x00;
 
 	/* Send command */
+	printf("bcm20353 wirte here \n");
 	if (write(fd, cmd, 4) != 4) {
 		fprintf(stderr, "Failed to write \"read local version\" "
 			"command\n");
@@ -971,6 +1037,7 @@ static int bcm2035(int fd, struct uart_t *u, struct termios *ti)
 	cmd[3] = 0x00;
 
 	/* Send command */
+	printf("bcm20353 wirte here \n");
 	if (write(fd, cmd, 4) != 4) {
 		fprintf(stderr, "Failed to write \"read local supported "
 						"commands\" command\n");
@@ -1017,6 +1084,7 @@ static int bcm2035(int fd, struct uart_t *u, struct termios *ti)
 		cmd[4], cmd[5]);
 
 	/* Send command */
+	printf("bcm20354 wirte here \n");
 	if (write(fd, cmd, 6) != 6) {
 		fprintf(stderr, "Failed to write \"set baud rate\" command\n");
 		return -1;
@@ -1029,20 +1097,57 @@ static int bcm2035(int fd, struct uart_t *u, struct termios *ti)
 
 	return 0;
 }
+#if 0
+static int bcm4329(int fd, struct uart_t *u, struct termios *ti)
+{
+    printf(">>> bcm4329\n");
+    return bcm4329_init(fd, u->speed, u->bdaddr, ti);
+}
+#endif
+#if defined(SW_BOARD_HAVE_BLUETOOTH_RTK)
+//above the uart[] initialization add the realtek_h4 function
+static int realtek_h4(int fd, struct uart_t *u, struct termios *ti)
+{
+	return rtk_init_h4(fd, u->speed, ti);
+}
+
+static int realtek_h5(int fd, struct uart_t *u, struct termios *ti)
+{
+	return rtk_init(fd, u->speed, ti);
+}
+#endif
+
+static int rda(int fd, struct uart_t *u, struct termios *ti)
+{
+	int val=0;
+    printf(">>> rda_587x\n");
+   printf(" debug   --val ========%d u->speed =%d u->bdaddr=%s \n",val,u->speed,u->bdaddr);
+
+    val = rda_init(fd, u->speed, u->bdaddr, ti);
+    printf("val ========%d u->speed =%d u->bdaddr=%s \n",val,u->speed,u->bdaddr);
+    return val;
+}
 
 struct uart_t uart[] = {
+#if defined(SW_BOARD_HAVE_BLUETOOTH_RTK)	
+	{"any", 		0x0000, 0x0000, HCI_UART_H4,   1500000, 1500000, 
+				FLOW_CTL, DISABLE_PM, NULL, realtek_h4 },
+#else
 	{ "any",        0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
 				FLOW_CTL, DISABLE_PM, NULL, NULL     },
-
+#endif
 	{ "ericsson",   0x0000, 0x0000, HCI_UART_H4,   57600,  115200,
 				FLOW_CTL, DISABLE_PM, NULL, ericsson },
 
 	{ "digi",       0x0000, 0x0000, HCI_UART_H4,   9600,   115200,
 				FLOW_CTL, DISABLE_PM, NULL, digi     },
-
+#if defined(SW_BOARD_HAVE_BLUETOOTH_RTK)
+	{ "bcsp",       0x0000, 0x0000, HCI_UART_BCSP, 115200, 115200,
+				FLOW_CTL, DISABLE_PM, NULL, realtek_h5  },
+#else
 	{ "bcsp",       0x0000, 0x0000, HCI_UART_BCSP, 115200, 115200,
 				0, DISABLE_PM, NULL, bcsp     },
-
+#endif
 	/* Xircom PCMCIA cards: Credit Card Adapter and Real Port Adapter */
 	{ "xircom",     0x0105, 0x080a, HCI_UART_H4,   115200, 115200,
 				FLOW_CTL, DISABLE_PM,  NULL, NULL     },
@@ -1132,7 +1237,16 @@ struct uart_t uart[] = {
 	/* QUALCOMM BTS */
 	{ "qualcomm",   0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
 			FLOW_CTL, DISABLE_PM, NULL, qualcomm, NULL },
-
+#if 0
+	/* Broadcom BCM4329 */
+	{ "bcm4329",    0x0A5C, 0x4329, HCI_UART_H4,   115200, 1500000, 
+			FLOW_CTL, DISABLE_PM, NULL, bcm4329  },
+#endif
+	//Add by RDA android ,add rda hci initial
+	/* RDA 587X */
+	{ "rda",     0x0000, 0x0000, HCI_UART_H4,   115200, 1500000, 
+			FLOW_CTL, DISABLE_PM,  "41:57:73:01:02:03", rda },
+	//End by RDA android
 	{ NULL, 0 }
 };
 
@@ -1155,14 +1269,64 @@ static struct uart_t * get_by_type(char *type)
 	}
 	return NULL;
 }
+#if 0
+/*
+ * winner's application
+ * if start hciattach without a valid mac address
+ * then generate one to use
+ */
+extern int sw_get_btaddrstr(char* bdaddr_str);
+static char addr_str[20] = {0};
+static int check_set_btaddr(struct uart_t *u)
+{
+    if (u->bdaddr == NULL) {
+        printf("bt addr is not set in argumants\n");
+        sw_get_btaddrstr(addr_str);
+        u->bdaddr = addr_str;
+    }
+    return 0;
+}
 
+static int load_bt_firmware(char *dev, struct uart_t *u)
+{
+    int ret;
+    char c2[256] = {0};
+    char dev_tty[20] = {0};
+    
+    strcpy(dev_tty, dev);
+    if (!strcmp(u->type, "bcm4330")) {
+        printf("bcm4330 bluetooth\n");
+        sprintf(c2, "patch_plus -d /system/vendor/modules/bcm4330.hcd %s %s %d", 
+                                    dev_tty, u->type, u->speed);
+        printf("%s\n", c2);
+        
+        ret = system(c2);
+        if(ret != 0) {
+            printf("ERROR:bcm4329---system ret=%d\n", ret);
+            return -1;
+        }
+    }    	   
+    else {
+        printf("module %s need not to patch firmware\n", u->type);
+    }
+    return 0;
+}
+#endif
 /* Initialize UART driver */
 static int init_uart(char *dev, struct uart_t *u, int send_break, int raw)
 {
 	struct termios ti;
 	int fd, i;
 	unsigned long flags = 0;
-
+	printf("init_uart --------->\n");
+#if 0	
+    /* check mac addr, if not set, read from file or generate it*/
+    check_set_btaddr(u);
+    
+    /* load firmware into bt module */
+    load_bt_firmware(dev, u);
+    usleep(200000);
+#endif
 	if (raw)
 		flags |= 1 << HCI_UART_RAW_DEVICE;
 
@@ -1180,13 +1344,13 @@ static int init_uart(char *dev, struct uart_t *u, int send_break, int raw)
 	}
 
 	cfmakeraw(&ti);
-
+	printf("flags =%d \n",flags);
 	ti.c_cflag |= CLOCAL;
 	if (u->flags & FLOW_CTL)
 		ti.c_cflag |= CRTSCTS;
 	else
 		ti.c_cflag &= ~CRTSCTS;
-
+	
 	if (tcsetattr(fd, TCSANOW, &ti) < 0) {
 		perror("Can't set port settings");
 		return -1;
@@ -1204,9 +1368,14 @@ static int init_uart(char *dev, struct uart_t *u, int send_break, int raw)
 		tcsendbreak(fd, 0);
 		usleep(500000);
 	}
-
+	printf("u->init fd =  %d\n",fd);
 	if (u->init && u->init(fd, u, &ti) < 0)
+	{	
+		perror("Can't u->init fd");
+		printf("fd =  %d\n",fd);
 		return -1;
+		
+	}	
 
 	tcflush(fd, TCIOFLUSH);
 
@@ -1215,6 +1384,18 @@ static int init_uart(char *dev, struct uart_t *u, int send_break, int raw)
 		perror("Can't set baud rate");
 		return -1;
 	}
+	
+	// Add by RDA android, if you open uart FLOW_CTL, let it TRUE, FALSE default.
+#if 1
+	printf("init_uart----------u->flags=%d\n",u->flags);
+	if (u->flags & FLOW_CTL) {
+		ti.c_cflag |= CRTSCTS;
+		rda_setup_flow_ctl(fd, u, &ti);
+			printf("rda_setup_flow_ctl\n");
+
+	}
+#endif
+//End by RDA android
 
 	/* Set TTY to N_HCI line discipline */
 	i = N_HCI;
@@ -1265,6 +1446,7 @@ int main(int argc, char *argv[])
 	raw = 0;
 
 	while ((opt=getopt(argc, argv, "bnpt:s:lr")) != EOF) {
+		printf("opt=%d \n",opt);
 		switch(opt) {
 		case 'b':
 			send_break = 1;
@@ -1313,7 +1495,7 @@ int main(int argc, char *argv[])
 		char *opt;
 
 		opt = argv[optind];
-
+		printf("chenjieaaa ----------------------------------debug argc=%d n=%d opt =%s\n",argc,n,opt);
 		switch(n) {
 		case 0:
 			dev[0] = 0;
@@ -1361,7 +1543,7 @@ int main(int argc, char *argv[])
 			break;
 		}
 	}
-
+	//printf("chenjiebbbbbbb ----------------------------------debug n=%d opt =%s\n",n,opt);
 	if (!u) {
 		fprintf(stderr, "Unknown device type or id\n");
 		exit(1);
@@ -1381,6 +1563,7 @@ int main(int argc, char *argv[])
 	alarm(to);
 	bcsp_max_retries = to;
 
+	
 	n = init_uart(dev, u, send_break, raw);
 	if (n < 0) {
 		perror("Can't initialize device");
@@ -1390,7 +1573,6 @@ int main(int argc, char *argv[])
 	printf("Device setup complete\n");
 
 	alarm(0);
-
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_flags   = SA_NOCLDSTOP;
 	sa.sa_handler = SIG_IGN;
@@ -1425,7 +1607,7 @@ int main(int argc, char *argv[])
 	sigdelset(&sigs, SIGTERM);
 	sigdelset(&sigs, SIGINT);
 	sigdelset(&sigs, SIGHUP);
-
+	printf("sigdelset OK\n");
 	while (!__io_canceled) {
 		p.revents = 0;
 		err = ppoll(&p, 1, NULL, &sigs);
@@ -1434,13 +1616,13 @@ int main(int argc, char *argv[])
 		if (err)
 			break;
 	}
-
+	printf("Restore OK\n");
 	/* Restore TTY line discipline */
 	ld = N_TTY;
 	if (ioctl(n, TIOCSETD, &ld) < 0) {
 		perror("Can't restore line discipline");
 		exit(1);
 	}
-
+	printf("hciattach OK\n");
 	return 0;
 }

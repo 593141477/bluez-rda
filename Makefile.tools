@@ -25,6 +25,7 @@ tools_l2ping_LDADD = lib/libbluetooth.la
 tools_hciattach_SOURCES = tools/hciattach.c tools/hciattach.h \
 						tools/hciattach_st.c \
 						tools/hciattach_ti.c \
+						tools/hciattach_rda5875_5870E.c \
 						tools/hciattach_tialt.c \
 						tools/hciattach_ath3k.c \
 						tools/hciattach_qualcomm.c
